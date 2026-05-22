@@ -56,7 +56,7 @@
                 };
             },
             async loadSettings() {
-                const doc = await db.collection('settings').doc('parcelTypes').get();
+                const doc = await db.collection('settings_city').doc('parcelTypes').get();
                 if (doc.exists && doc.data().types) return { types: doc.data().types };
                 return { types: ['กล่องใหญ่', 'กล่องเล็ก', 'ซอง/ห่อ', 'อื่นๆ'] };
             },
@@ -64,7 +64,7 @@
             listenGlobalCache(callback) {
                 if (this._globalCacheUnsubscribe) return;
                 const ago = new Date(); ago.setDate(ago.getDate() - 30);
-                this._globalCacheUnsubscribe = db.collection('parcels')
+                this._globalCacheUnsubscribe = db.collection('parcels_city')
                     .where('dateIn', '>=', firebase.firestore.Timestamp.fromDate(ago))
                     .orderBy('dateIn', 'desc')
                     .onSnapshot(snap => {
@@ -73,19 +73,19 @@
                     }, err => console.warn('Global cache listener error:', err));
             },
             async searchParcel(trackingNo) {
-                const doc = await db.collection('parcels').doc(trackingNo).get();
+                const doc = await db.collection('parcels_city').doc(trackingNo).get();
                 if (!doc.exists) return { success: false, message: 'ไม่พบข้อมูลพัสดุในระบบ' };
                 const p = this._docToParcel(doc);
                 let signatureUrl = '';
                 if (p['สถานะ'] !== 'พร้อมรับ') {
-                    const reqSnap = await db.collection('receiveRequests')
+                    const reqSnap = await db.collection('receiveRequests_city')
                         .where('trackingNo', '==', trackingNo).where('status', '==', 'อนุมัติ').limit(1).get();
                     if (!reqSnap.empty) signatureUrl = reqSnap.docs[0].data().signatureUrl || '';
                 }
                 return { success: true, data: { trackingNo: p['เลขที่พัสดุ'], seq: p['ลำดับพัสดุ'], type: p['ประเภทพัสดุ'], status: p['สถานะ'], dateIn: p['วันที่รับ (เข้า)'], dateOut: p['วันที่จ่าย'], dateReturn: p['วันที่ตีกลับ'], signatureUrl } };
             },
             async verifyUser(username, password) {
-                const snap = await db.collection('users').where('username', '==', username).where('password', '==', password).limit(1).get();
+                const snap = await db.collection('users_city').where('username', '==', username).where('password', '==', password).limit(1).get();
                 if (snap.empty) return { success: false, message: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' };
                 const u = snap.docs[0].data();
                 if (u.status === 'Inactive') return { success: false, message: 'บัญชีนี้ถูกระงับการใช้งาน' };
@@ -93,7 +93,7 @@
             },
             async getNextSequenceRange(qty) {
                 const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
-                const snap = await db.collection('parcels').where('dateIn', '>=', firebase.firestore.Timestamp.fromDate(todayStart)).get();
+                const snap = await db.collection('parcels_city').where('dateIn', '>=', firebase.firestore.Timestamp.fromDate(todayStart)).get();
                 let maxSeq = 0;
                 snap.docs.forEach(doc => { const m = String(doc.data().seq || '').match(/\d+/); if (m && parseInt(m[0]) > maxSeq) maxSeq = parseInt(m[0]); });
                 return Array.from({ length: qty }, (_, i) => maxSeq + i + 1);
@@ -102,7 +102,7 @@
                 const batch = db.batch(); const now = firebase.firestore.Timestamp.now();
                 parcelsArray.forEach(p => {
                     const trk = (p.trackingNo || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-                    batch.set(db.collection('parcels').doc(trk), { seq: String(p.seq), trackingNo: trk, type: '', status: 'รอลงทะเบียน', dateIn: now, dateOut: null, dateReturn: null, staffIn: userName, staffOut: '', staffReturn: '', recipientName: '', room: '', updatedAt: now });
+                    batch.set(db.collection('parcels_city').doc(trk), { seq: String(p.seq), trackingNo: trk, type: '', status: 'รอลงทะเบียน', dateIn: now, dateOut: null, dateReturn: null, staffIn: userName, staffOut: '', staffReturn: '', recipientName: '', room: '', updatedAt: now });
                 });
                 await batch.commit();
                 return { success: true, message: `บันทึก ${parcelsArray.length} รายการสำเร็จ` };
@@ -111,31 +111,31 @@
                 const upd = { type, status: 'พร้อมรับ', updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
                 if (recipientName) upd.recipientName = recipientName;
                 if (room) upd.room = room;
-                await db.collection('parcels').doc(trackingNo).update(upd);
+                await db.collection('parcels_city').doc(trackingNo).update(upd);
                 return { success: true };
             },
             async payOutParcel(trackingNo, userName) {
-                await db.collection('parcels').doc(trackingNo).update({ status: 'จ่ายสำเร็จ', dateOut: firebase.firestore.Timestamp.now(), staffOut: userName, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+                await db.collection('parcels_city').doc(trackingNo).update({ status: 'จ่ายสำเร็จ', dateOut: firebase.firestore.Timestamp.now(), staffOut: userName, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
                 return { success: true };
             },
             async returnParcels(trackingNos, userName) {
                 const batch = db.batch(); const now = firebase.firestore.Timestamp.now();
-                trackingNos.forEach(trk => batch.update(db.collection('parcels').doc(trk), { status: 'ตีกลับแล้ว', dateReturn: now, staffReturn: userName, updatedAt: now }));
+                trackingNos.forEach(trk => batch.update(db.collection('parcels_city').doc(trk), { status: 'ตีกลับแล้ว', dateReturn: now, staffReturn: userName, updatedAt: now }));
                 await batch.commit(); return { success: true };
             },
             async deliverParcels(trackingNos, userName) {
                 const batch = db.batch(); const now = firebase.firestore.Timestamp.now();
-                trackingNos.forEach(trk => batch.update(db.collection('parcels').doc(trk), { status: 'จ่ายหน้าตึกแล้ว', dateOut: now, staffOut: userName, updatedAt: now }));
+                trackingNos.forEach(trk => batch.update(db.collection('parcels_city').doc(trk), { status: 'จ่ายหน้าตึกแล้ว', dateOut: now, staffOut: userName, updatedAt: now }));
                 await batch.commit(); return { success: true };
             },
             async fetchParcelForDetail(trackingNo) {
-                const doc = await db.collection('parcels').doc(trackingNo).get();
+                const doc = await db.collection('parcels_city').doc(trackingNo).get();
                 if (doc.exists) return { success: true, data: this._docToParcel(doc) };
                 return { success: false, message: 'ไม่พบพัสดุรหัส ' + trackingNo };
             },
             async loadReportData(startDateHtml, endDateHtml, typeStatus) {
                 // Fetch recent parcels, orderBy dateIn avoids missing composite index when compounded with 'status'
-                const snap = await db.collection('parcels').orderBy('dateIn', 'desc').limit(2000).get();
+                const snap = await db.collection('parcels_city').orderBy('dateIn', 'desc').limit(2000).get();
                 let results = snap.docs.map(doc => this._docToParcel(doc));
 
                 // 1. Client-side filter for status
@@ -164,7 +164,7 @@
                 }
                 this._pendingCallback = callback;
 
-                this._pendingListenerUnsubscribe = db.collection('receiveRequests')
+                this._pendingListenerUnsubscribe = db.collection('receiveRequests_city')
                     .where('status', '==', 'รอดำเนินการ')
                     .onSnapshot(async (snapshot) => {
                         const trkNos = snapshot.docs.map(d => d.data().trackingNo);
@@ -172,7 +172,7 @@
 
                         if (missingTrk.length > 0) {
                             await Promise.all(missingTrk.map(async trk => {
-                                const pd = await db.collection('parcels').doc(trk).get();
+                                const pd = await db.collection('parcels_city').doc(trk).get();
                                 if (pd.exists) this._parcelsMapCache[trk] = this._docToParcel(pd);
                             }));
                         }
@@ -212,12 +212,12 @@
             },
             async approveRequest(trackingNo, userName) {
                 await this.payOutParcel(trackingNo, userName);
-                const reqSnap = await db.collection('receiveRequests').where('trackingNo', '==', trackingNo).where('status', '==', 'รอดำเนินการ').limit(1).get();
+                const reqSnap = await db.collection('receiveRequests_city').where('trackingNo', '==', trackingNo).where('status', '==', 'รอดำเนินการ').limit(1).get();
                 if (!reqSnap.empty) await reqSnap.docs[0].ref.update({ status: 'อนุมัติ' });
                 return { success: true };
             },
             async rejectRequest(trackingNo) {
-                const reqSnap = await db.collection('receiveRequests').where('trackingNo', '==', trackingNo).where('status', '==', 'รอดำเนินการ').limit(1).get();
+                const reqSnap = await db.collection('receiveRequests_city').where('trackingNo', '==', trackingNo).where('status', '==', 'รอดำเนินการ').limit(1).get();
                 if (!reqSnap.empty) await reqSnap.docs[0].ref.update({ status: 'ปฏิเสธ' });
                 return { success: true };
             }
@@ -2694,7 +2694,7 @@
                 document.getElementById('statReturned').innerHTML = '<i class="fas fa-spinner fa-spin text-2xl"></i>';
 
                 try {
-                    const snap = await db.collection('parcels').where('status', '==', 'ตีกลับแล้ว').get();
+                    const snap = await db.collection('parcels_city').where('status', '==', 'ตีกลับแล้ว').get();
                     // Only update if still in cumulative mode (user might have toggled back)
                     if (_returnedMode === 'cumulative') {
                         document.getElementById('statReturned').textContent = snap.size;
@@ -3437,7 +3437,7 @@
                 didOpen: () => Swal.showLoading()
             });
 
-            db.collection('receiveRequests')
+            db.collection('receiveRequests_city')
                 .where('trackingNo', '==', trackingNo)
                 .where('status', '==', 'รอดำเนินการ')
                 .limit(1)
@@ -3538,7 +3538,7 @@
                     const successHtml = isTh ? '<p class="text-gray-600">โปรดรอเจ้าหน้าที่อนุมัติจ่ายของ</p><p class="mt-3 text-red-600 font-bold text-sm bg-red-50 p-2 rounded-lg border border-red-100"><i class="fas fa-id-card mr-1.5"></i>กรุณาเตรียมบัตรประชาชนหรือพาสปอร์ต<br>เพื่อยืนยันตัวตนกับเจ้าหน้าที่</p>' : '<p class="text-gray-600">Please wait for staff to process your parcel</p><p class="mt-3 text-red-600 font-bold text-sm bg-red-50 p-2 rounded-lg border border-red-100"><i class="fas fa-id-card mr-1.5"></i>Please prepare your ID card or passport<br>to verify with the staff</p>';
 
                     // Optimistic UI Update & Background Sync
-                    db.collection('receiveRequests').add({
+                    db.collection('receiveRequests_city').add({
                         trackingNo: trackingNo,
                         requestDate: firebase.firestore.Timestamp.now(),
                         receiverName: receiverName,
@@ -4451,10 +4451,10 @@
 
                 // Update Firestore
                 const updateData = { type: newType, status: newStatus, recipientName: newRecipient, room: newRoom, updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
-                await db.collection('parcels').doc(trk).update(updateData);
+                await db.collection('parcels_city').doc(trk).update(updateData);
 
                 // Write audit log
-                await db.collection('auditLogs').add({
+                await db.collection('auditLogs_city').add({
                     trackingNo: trk,
                     action: 'edit',
                     changes: changes,
@@ -4511,7 +4511,7 @@
                 Swal.fire({ title: '\u0e01\u0e33\u0e25\u0e31\u0e07\u0e25\u0e1a...', didOpen: () => Swal.showLoading() });
 
                 // Write audit log BEFORE delete
-                await db.collection('auditLogs').add({
+                await db.collection('auditLogs_city').add({
                     trackingNo: trk,
                     action: 'delete',
                     changes: [{ field: '\u0e25\u0e1a\u0e1e\u0e31\u0e2a\u0e14\u0e38', from: _manageOriginal.status, to: '\u0e16\u0e39\u0e01\u0e25\u0e1a' }],
@@ -4519,7 +4519,7 @@
                     timestamp: firebase.firestore.Timestamp.now()
                 });
 
-                await db.collection('parcels').doc(trk).delete();
+                await db.collection('parcels_city').doc(trk).delete();
 
 
                 Swal.fire({ icon: 'success', title: '\u0e25\u0e1a\u0e1e\u0e31\u0e2a\u0e14\u0e38\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08!', text: trk, timer: 2000, showConfirmButton: false });
@@ -4536,7 +4536,7 @@
             logDiv.innerHTML = '<p class="text-gray-400 text-center py-2"><i class="fas fa-spinner fa-spin mr-2"></i>\u0e01\u0e33\u0e25\u0e31\u0e07\u0e42\u0e2b\u0e25\u0e14...</p>';
 
             try {
-                const snap = await db.collection('auditLogs')
+                const snap = await db.collection('auditLogs_city')
                     .where('trackingNo', '==', trackingNo)
                     .orderBy('timestamp', 'desc')
                     .limit(20)
@@ -4594,7 +4594,7 @@
             container.innerHTML = '<p class="text-gray-400 text-center py-20"><i class="fas fa-spinner fa-spin text-3xl mb-4 text-indigo-500"></i><br>กำลังดึงข้อมูล...</p>';
 
             try {
-                const snap = await db.collection('auditLogs')
+                const snap = await db.collection('auditLogs_city')
                     .where('timestamp', '>=', firebase.firestore.Timestamp.fromDate(start))
                     .where('timestamp', '<=', firebase.firestore.Timestamp.fromDate(end))
                     .orderBy('timestamp', 'desc').limit(200).get();

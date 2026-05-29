@@ -13,7 +13,30 @@
     <!-- SweetAlert2 for popups -->
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
-    <!-- Firebase SDK (Firestore) -->
+    <!-- Firebase SDK (Firestore) (ปิดการเชื่อมต่อชั่วคราว) -->
+    <script>
+        // แสดงหน้าปิดปรับปรุงทันทีที่โหลดเสร็จ
+        window.onload = function() {
+            document.body.innerHTML = '<div style="text-align:center; padding: 50px; font-family: sans-serif;"><h1 style="color: red;">ปิดปรับปรุงระบบชั่วคราว (กอล์ฟซิตี้)</h1><p>ขออภัยในความไม่สะดวก ระบบกำลังตรวจสอบปัญหาขัดข้องทางเทคนิคเพื่อป้องกันโควต้า Firebase เต็ม</p></div>';
+        };
+        
+        // Mock Firebase object เพื่อป้องกัน JavaScript Error ค้าง
+        const firebase = {
+            firestore: function() {
+                return {
+                    enablePersistence: function() { return Promise.resolve(); },
+                    collection: function() { return this; },
+                    doc: function() { return this; },
+                    where: function() { return this; },
+                    orderBy: function() { return this; },
+                    limit: function() { return this; },
+                    get: function() { return Promise.resolve({ empty: true, exists: false, docs: [] }); },
+                    onSnapshot: function() { return function(){}; }
+                };
+            }
+        };
+    </script>
+    <!-- 
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
     <script>
@@ -25,6 +48,7 @@
             messagingSenderId: "980009926624",
             appId: "1:980009926624:web:b883b6e20ee651e62eb585"
         });
+    -->
         const db = firebase.firestore();
 
         // Enable offline persistence to save quotas massively

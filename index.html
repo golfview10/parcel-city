@@ -63,7 +63,9 @@
             _globalCacheUnsubscribe: null,
             listenGlobalCache(callback) {
                 if (this._globalCacheUnsubscribe) return;
-                const ago = new Date(); ago.setDate(ago.getDate() - 30);
+                const ago = new Date(); 
+                ago.setDate(ago.getDate() - 30);
+                ago.setHours(0, 0, 0, 0); // ตั้งเวลาเป็นเที่ยงคืนเพื่อใช้งาน Cache อย่างมีประสิทธิภาพ
                 this._globalCacheUnsubscribe = db.collection('parcels_city')
                     .where('dateIn', '>=', firebase.firestore.Timestamp.fromDate(ago))
                     .orderBy('dateIn', 'desc')
@@ -134,23 +136,37 @@
                 return { success: false, message: 'ไม่พบพัสดุรหัส ' + trackingNo };
             },
             async loadReportData(startDateHtml, endDateHtml, typeStatus) {
-                // Fetch recent parcels, orderBy dateIn avoids missing composite index when compounded with 'status'
-                const snap = await db.collection('parcels_city').orderBy('dateIn', 'desc').limit(2000).get();
+                let dateField = 'dateIn';
+                if (typeStatus === 'จ่ายสำเร็จ' || typeStatus === 'จ่ายหน้าตึกแล้ว') dateField = 'dateOut';
+                if (typeStatus === 'ตีกลับแล้ว') dateField = 'dateReturn';
+
+                let query = db.collection('parcels_city');
+
+                if (startDateHtml) {
+                    const p = startDateHtml.split('-'); 
+                    const s = new Date(p[0], p[1] - 1, p[2], 0, 0, 0);
+                    query = query.where(dateField, '>=', firebase.firestore.Timestamp.fromDate(s));
+                }
+                
+                if (endDateHtml) {
+                    const p = endDateHtml.split('-'); 
+                    const e = new Date(p[0], p[1] - 1, p[2], 23, 59, 59);
+                    query = query.where(dateField, '<=', firebase.firestore.Timestamp.fromDate(e));
+                }
+
+                if (!startDateHtml && !endDateHtml) {
+                    query = query.orderBy(dateField, 'desc').limit(500);
+                } else {
+                    query = query.orderBy(dateField, 'desc');
+                }
+
+                const snap = await query.get();
                 let results = snap.docs.map(doc => this._docToParcel(doc));
 
-                // 1. Client-side filter for status
                 if (typeStatus && typeStatus !== 'ทั้งหมด') {
                     results = results.filter(p => p['สถานะ'] === typeStatus);
                 }
-
-                // 2. Client-side filter for date
-                if (startDateHtml || endDateHtml) {
-                    let s = new Date(0), e = new Date(2100, 0, 1);
-                    if (startDateHtml) { const p = startDateHtml.split('-'); s = new Date(p[0], p[1] - 1, p[2], 0, 0, 0); }
-                    if (endDateHtml) { const p = endDateHtml.split('-'); e = new Date(p[0], p[1] - 1, p[2], 23, 59, 59); }
-                    const parseD = str => { if (!str) return new Date(0); const ps = str.split(' '); const dp = ps[0].split('/'); if (dp.length !== 3) return new Date(0); return new Date(parseInt(dp[2]), parseInt(dp[1]) - 1, parseInt(dp[0])); };
-                    results = results.filter(p => { let dt = p['วันที่รับ (เข้า)']; if (typeStatus === 'จ่ายสำเร็จ' || typeStatus === 'จ่ายหน้าตึกแล้ว') dt = p['วันที่จ่าย']; if (typeStatus === 'ตีกลับแล้ว') dt = p['วันที่ตีกลับ']; if (!dt) return false; const d = parseD(dt); return d >= s && d <= e; });
-                }
+                
                 return results;
             },
             _pendingListenerUnsubscribe: null,
